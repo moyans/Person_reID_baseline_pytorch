@@ -17,6 +17,7 @@ import os
 import scipy.io
 import yaml
 import math
+import json
 from model import ft_net, ft_net_dense, ft_net_NAS, PCB, PCB_test
 
 #fp16
@@ -197,15 +198,18 @@ def get_id(img_path):
         camera_id.append(int(camera[0]))
     return camera_id, labels
 
+
+
+
 gallery_path = image_datasets['gallery'].imgs
 query_path = image_datasets['query'].imgs
 
-gallery_cam,gallery_label = get_id(gallery_path)
-query_cam,query_label = get_id(query_path)
+# gallery_cam,gallery_label = get_id(gallery_path)
+# query_cam,query_label = get_id(query_path)
 
-if opt.multi:
-    mquery_path = image_datasets['multi-query'].imgs
-    mquery_cam,mquery_label = get_id(mquery_path)
+# if opt.multi:
+#     mquery_path = image_datasets['multi-query'].imgs
+#     mquery_cam,mquery_label = get_id(mquery_path)
 
 ######################################################################
 # Load Collected data Trained model
@@ -219,9 +223,6 @@ else:
 
 if opt.PCB:
     model_structure = PCB(opt.nclasses)
-
-#if opt.fp16:
-#    model_structure = network_to_half(model_structure)
 
 model = load_network(model_structure)
 
@@ -249,26 +250,38 @@ with torch.no_grad():
     query_feature = extract_feature(model,dataloaders['query'])
     if opt.multi:
         mquery_feature = extract_feature(model,dataloaders['multi-query'])
-    
-# Save to Matlab for check
-result = {'gallery_f':gallery_feature.numpy(),'gallery_label':gallery_label,'gallery_cam':gallery_cam,'query_f':query_feature.numpy(),'query_label':query_label,'query_cam':query_cam}
 
-print("*-*"*10)
-print('gallery_f:', gallery_feature.numpy())
-print('gallery_label: ', gallery_label)
-print('gallery_cam: ', gallery_cam)
-print("*-*"*10)
-print('query_f:', query_feature.numpy())
-print('query_label: ', query_label)
-print('query_cam: ', query_cam)
+query_feature = query_feature.cuda()
+gallery_feature = gallery_feature.cuda()
+
+predict_dic = {}
+
+def evaluate(qf,gf):
+    query = qf.view(-1,1)
+    # print(query.shape)
+    score = torch.mm(gf,query)
+    score = score.squeeze(1).cpu()
+    score = score.numpy()
+    # predict index
+    index = np.argsort(score)  #from small to large
+    index = index[::-1]
+    return index[:200]
+
+for i in range(query_feature.shape[0]):
+
+    query_imgPath = query_path[i][0]
+    query_imgName = os.path.basename(query_imgPath)
+    predict_dic[query_imgName] = []
+
+    index = evaluate(query_feature[i],gallery_feature)
+
+    for _ind in index:
+        gallery_imgPath = gallery_path[_ind][0]
+        gallery_imgName = os.path.basename(gallery_imgPath)
+        predict_dic[query_imgName].append(gallery_imgName)
 
 
-scipy.io.savemat('pytorch_result.mat',result)
 
-print(opt.name)
-result = './model/%s/result.txt'%opt.name
-os.system('python evaluate_gpu.py | tee -a %s'%result)
-
-if opt.multi:
-    result = {'mquery_f':mquery_feature.numpy(),'mquery_label':mquery_label,'mquery_cam':mquery_cam}
-    scipy.io.savemat('multi_query.mat',result)
+json_data = json.dumps(predict_dic)
+with open('upload.json', 'a') as f_six:
+    f_six.write(json_data)

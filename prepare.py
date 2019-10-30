@@ -2,7 +2,7 @@ import os
 from shutil import copyfile
 
 # You only need to change this line to your dataset download path
-download_path = '../Market'
+download_path = './Market'
 
 if not os.path.isdir(download_path):
     print('please change the download_path')
@@ -10,6 +10,7 @@ if not os.path.isdir(download_path):
 save_path = download_path + '/pytorch'
 if not os.path.isdir(save_path):
     os.mkdir(save_path)
+    
 #-----------------------------------------
 #query
 query_path = download_path + '/query'
